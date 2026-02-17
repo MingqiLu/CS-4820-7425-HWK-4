@@ -244,7 +244,8 @@ Q2. Consider the following definition.
 
 
 ; Configuration: update as per instructions
-(modeling-start)
+
+(modeling-admit-all)
 
 #|
 
@@ -262,15 +263,8 @@ Q3. Consider the following definitions.
 ; The :skip-admissibilityp command below tells ACL2s to skip the
 ; termination proof, as ACL2s cannot prove termination without help.
 
-(definec if-flat (x :if-expr) :norm-if-expr
-  :skip-admissibilityp t
-  (match x
-    (:if-atom x)
-    (('if a b c)
-     (match a
-       (:if-atom `(if ,a ,(if-flat b) ,(if-flat c)))
-       (('if d e f)
-        (if-flat `(if ,d (if ,e ,b ,c) (if ,f ,b ,c))))))))
+; According to Quan's note on piazza, 
+; if-flat is moved below m-if-flat
 
 #|
 
@@ -296,13 +290,15 @@ Q3. Consider the following definitions.
 |#
 
 ; Define, m-if-flat, a measure function for if-flat.
-; Q3a. We are using the definition on page ...
+; Q3a. We are using the definition on page 128 of RAP lecture notes
 
 
 ; Q3b. Fill in the definition. This definition must be accepted by
 ; ACL2s. 
-(definec m-if-flat (...) ...
-  ...)
+(definec m-if-flat (x :if-expr) :nat
+  (match x
+    (:if-atom 1)
+    (('if a b c) (* (m-if-flat a) (+ (m-if-flat b) (m-if-flat c) 1)))))
 
 ; The proof obligations for the termination proof of if-flat, using
 ; properties.  Make sure that ACL2s can prove all of these
@@ -311,9 +307,44 @@ Q3. Consider the following definitions.
 ; can (and should) prove lemmas as needed. 
 
 ; Q3c
-(property ...)
-(property ...)
-(property ...)
+
+(property m-if-flat->0 (a :if-expr)
+  (< 0 (m-if-flat a)))
+
+(property m-if-flat-b<abc (a :if-atom b c :if-expr)
+  (< (m-if-flat b)
+    (m-if-flat `(if ,a ,b ,c))))
+
+(property m-if-flat-c<abc (a :if-atom b c :if-expr)
+  (< (m-if-flat c)
+    (m-if-flat `(if ,a ,b ,c))))
+
+(property m-if-flat-debcfeb (d e f b c :if-expr)
+  (== (m-if-flat `(if ,d (if ,e ,b ,c) (if ,f ,b ,c)))
+      (* (m-if-flat d) (1+ (* (+ (m-if-flat e) (m-if-flat f)) (+ (m-if-flat b) (m-if-flat c) 1))))))
+
+(property m-if-flat-defbc (d e f b c :if-expr)
+  (== (m-if-flat `(if (if ,d ,e ,f) ,b ,c))
+      (* (m-if-flat d) (+ (m-if-flat e) (m-if-flat f) 1) (+ (m-if-flat b) (m-if-flat c) 1))))
+
+(property m-if-flat-debcfeb<defbc (d e f b c :if-expr)
+  (< (m-if-flat `(if ,d (if ,e ,b ,c) (if ,f ,b ,c)))
+    (m-if-flat `(if (if ,d ,e ,f) ,b ,c)))
+  :hints (("Goal"
+           :do-not-induct t
+           :in-theory (enable m-if-flat-debcfeb
+                              m-if-flat-defbc)
+           )))
+
+(definec if-flat (x :if-expr) :norm-if-expr
+  (declare (xargs :measure (m-if-flat x)))
+  (match x
+    (:if-atom x)
+    (('if a b c)
+     (match a
+       (:if-atom `(if ,a ,(if-flat b) ,(if-flat c)))
+       (('if d e f)
+        (if-flat `(if ,d (if ,e ,b ,c) (if ,f ,b ,c))))))))
 
 #|
  
@@ -350,8 +381,24 @@ Q3. Consider the following definitions.
 ; no nested inductions! Also, remember theorems are rewrite rules, so
 ; orient appropriately.
 
-(property if-flat-equal-if (...)
-  ...)
+(property subgoal-not-if-eval (e :if-expr a :if-assign)
+  (implies (and (if-exprp e)
+                (consp e)
+                (equal (car e) 'if)
+                (consp (cdr e))
+                (consp (cddr e))
+                (consp (cdddr e))
+                (not (cddddr e))
+                (not (booleanp (cadr e)))
+                (not (varp (cadr e)))
+                (not (consp (cdddr (cadr e))))
+                (if-assignp a))
+           (not (if-eval e a))))
+
+(property if-flat-equal-if (e :if-expr a :if-assign)
+  (== (if-eval (if-flat e) a) 
+      (if-eval e a))
+  :hints (("Goal" :induct (if-flat e))))
 
 #|
 
@@ -388,8 +435,14 @@ Q3. Consider the following definitions.
 ; (check-validp e) = t, then evaluating e under a, an arbitrary
 ; if-assign, results in t.
 
-(property check-validp-is-sound ...
-  ...)
+(property validp-is-sound (e :norm-if-expr a b :if-assign)
+  (implies (validp e a) 
+    (if-eval e (append a b)))
+  :hints (("Goal" :induct (validp e a))))
+
+(property check-validp-is-sound (e :if-expr a :if-assign)
+  (implies (check-validp e) 
+    (if-eval e a)))
 
 ; Q3f
 ; 
@@ -398,11 +451,30 @@ Q3. Consider the following definitions.
 ; if-expr evaluates to nil. With this proof, we now know that
 ; check-validp is a decision procedure for PL validity.
 
-...
+(definec witness (e :norm-if-expr a :if-assign) :if-assign
+  (match e
+    (:if-atom a)
+    (('if x y z)
+     (if (assignedp x a)
+         (if (lookup-atom x a)
+             (witness y a)
+           (witness z a))
+       (if (validp y (acons x t a))
+           (witness z (acons x nil a))
+         (witness y (acons x t a)))))))
+
+(property validp-is-complete (e :norm-if-expr a :if-assign)
+  (implies (not (validp e a)) 
+    (not (if-eval e (witness e a))))
+  :hints (("Goal" :induct (validp e a))))
+
+(property check-validp-is-complete (e :if-expr)
+  (implies (not (check-validp e))
+           (not (if-eval e (witness (if-flat e) nil)))))
 
 
 ; Configuration: update as per instructions
-(modeling-start)
+(modeling-admit-all)
 
 #|
 
