@@ -122,6 +122,7 @@ Q1. Consider the following definition
 ; measure functions, as mentioned in Section 5.5.
 
 ; Q1b. Fill in the definition
+
 (definec m-bad-app (x y :tl acc :all) :nat
   (if (endp x) (len y)
     (if (endp y) (+ 1 (len x))
@@ -381,6 +382,7 @@ Q3. Consider the following definitions.
 ; no nested inductions! Also, remember theorems are rewrite rules, so
 ; orient appropriately.
 
+
 (property subgoal-not-if-eval (e :if-expr a :if-assign)
   (implies (and (if-exprp e)
                 (consp e)
@@ -395,10 +397,12 @@ Q3. Consider the following definitions.
                 (if-assignp a))
            (not (if-eval e a))))
 
+
 (property if-flat-equal-if (e :if-expr a :if-assign)
   (== (if-eval (if-flat e) a) 
       (if-eval e a))
   :hints (("Goal" :induct (if-flat e))))
+
 
 #|
 
@@ -436,13 +440,21 @@ Q3. Consider the following definitions.
 ; if-assign, results in t.
 
 (property validp-is-sound (e :norm-if-expr a b :if-assign)
+  :proofs? nil
   (implies (validp e a) 
     (if-eval e (append a b)))
   :hints (("Goal" :induct (validp e a))))
 
 (property check-validp-is-sound (e :if-expr a :if-assign)
   (implies (check-validp e) 
-    (if-eval e a)))
+    (if-eval e a))
+  :hints (("Goal"
+           :do-not-induct t
+           :in-theory (enable check-validp)
+           :use ((:instance validp-is-sound
+                            (e (if-flat e))
+                            (a nil)
+                            (b a))))))
 
 ; Q3f
 ; 
@@ -464,14 +476,20 @@ Q3. Consider the following definitions.
          (witness y (acons x t a)))))))
 
 (property validp-is-complete (e :norm-if-expr a :if-assign)
+  :proofs? nil
   (implies (not (validp e a)) 
     (not (if-eval e (witness e a))))
   :hints (("Goal" :induct (validp e a))))
 
 (property check-validp-is-complete (e :if-expr)
   (implies (not (check-validp e))
-           (not (if-eval e (witness (if-flat e) nil)))))
-
+           (not (if-eval e (witness (if-flat e) nil))))
+  :hints (("Goal"
+           :do-not-induct t
+           :in-theory (enable check-validp)
+           :use ((:instance validp-is-complete
+                            (e (if-flat e))
+                            (a nil))))))
 
 ; Configuration: update as per instructions
 (modeling-admit-all)
@@ -534,162 +552,66 @@ Q3. Consider the following definitions.
 
 |#
 
-; (property <<-iff-not-<<=-swap (a :all b :all)
-;   (== (not (<<= b a)) 
-;       (<< a b)))
-
-; (property <<-implies-<<= (a :all b :all)
-;   (implies (<< a b)
-;            (<<= a b)))
-
-
-(definec all-<< (x :tl a :all) :bool
-  (match x
-    (() t)
-    ((e . es) (and (<< e a) (all-<< es a)))))
-
-(property less-all-<< (a :all x :tl)
-  (all-<< (less a x) a))
-
-(definec all-<<= (a :all x :tl) :bool
-  (match x
-    (() t)
-    ((e . es) (and (<<= a e) (all-<<= a es)))))
-
-(property notless-all-<<= (a :all x :tl)
-  (all-<<= a (notless a x)))
-
 (definec ordered (x :tl) :bool
   (or (endp x)
       (endp (cdr x))
       (and (<<= (car x) (cadr x))
            (ordered (cdr x)))))
 
-(property ordered-append-<< (a :all x :tl)
-  (implies (and (all-<< x a) (ordered x))
-    (ordered (append x (list a)))))
-
-(property ordered-append-<<= (a :all x :tl)
-  (implies (and (all-<<= a x) (ordered x))
-    (ordered (append (list a) x))))
-
-(property ordered-append (a :all x y :tl)
-  (implies (and (all-<< x a) (ordered x) (all-<<= a y) (ordered y))
-    (ordered (append x (cons a y)))))
-
-(property all-<<-append (x :tl y :tl a :all z :all)
-  (== (all-<< (append x (cons z y)) a)
-      (and (all-<< x a) (all-<< y a) (<< z a))))
-
-(property all-<<=-append (a :all x :tl y :tl z :all)
-  (== (all-<<= a (append x (cons z y)))
-      (and (all-<<= a x) (all-<<= a y) (<<= a z))))
-
-(property all-<<-part1 (x :tl a :all z :all)
-  (implies (all-<< x a)
-      (all-<< (less z x) a)))
-
-(property all-<<-part2 (x :tl a :all z :all)
-  (implies (all-<< x a)
-      (all-<< (notless z x) a)))
-
-(property all-<<=-part1 (x :tl a :all z :all)
-  (implies (all-<<= a x)
-      (all-<<= a (less z x))))
-
-(property all-<<=-part2 (x :tl a :all z :all)
-  (implies (all-<<= a x)
-      (all-<<= a (notless z x))))
-
-(property all-<<-qsort (x :tl a :all)
-  (implies (all-<< x a)
-           (all-<< (qsort x) a))
-  :hints (("Goal" :induct (qsort x))))
-
-(property all-<<=-qsort (a :all x :tl)
-  (implies (all-<<= a x)
-           (all-<<= a (qsort x)))
-  :hints (("Goal" :induct (qsort x))))
-
-(property ordered-insert (a :all x :tl)
+(property insert-ordered (x :tl a :all)
   (implies (ordered x)
-           (ordered (insert a x))))
+          (ordered (insert a x))))
 
 (property isort-ordered (x :tl)
   (ordered (isort x))
   :hints (("Goal" :induct (isort x))))
 
-(property qsort-ordered (x :tl)
-  (ordered (qsort x))
-  :hints (("Goal" :induct (qsort x))))
+(property insert-least-less (x :tl a :all)
+  (implies (and (ordered x) (<<= a (car x)))
+          (== (less a x) nil)))
 
-(property isort-ordered-x=x (x :tl)
+(property insert-least-notless (x :tl a :all)
+  (implies (and (ordered x) (<<= a (car x)))
+          (== (notless a x) x)))
+
+(property less-insert-a<<=b (x :tl a b :all)
+  (implies (<<= a b)
+          (== (less a (insert b x))
+              (less a x))))
+
+(property less-insert-b<<a (x :tl a b :all)
+  :proofs? nil
+  (implies (and (ordered x) (<< b a))
+           (== (insert b (less a x))
+               (less a (insert b x)))))
+
+(property swap-isort-less (x :tl a :all)
+  (== (isort (less a x))
+      (less a (isort x))))
+
+(property notless-insert-b<<a (x :tl a b :all)
+  (implies (<< b a)
+          (== (notless a (insert b x))
+              (notless a x))))
+
+(property notless-insert-a<<=b (x :tl a b :all)
+  :proofs? nil
+  (implies (and (ordered x) (<<= a b))
+          (== (insert b (notless a x))
+              (notless a (insert b x)))))
+
+(property swap-isort-notless (x :tl a :all)
+  (== (isort (notless a x))
+      (notless a (isort x))))
+
+(property split-isort (x :tl a :all)
   (implies (ordered x)
-    (== (isort x) x)))
-
-(property ordered-implies-ordered-cdr (x2 :tl)
-  (implies (ordered x2)
-           (ordered (cdr x2))))
-
-(property ordered-less-empty (x1 :all x2 :tl)
-  (implies (and (consp x2)
-                (ordered x2)
-                (not (<< (car x2) x1)))
-           (endp (less x1 x2))))
-
-(property ordered-notless-id (x1 :all x2 :tl)
-  (implies (and (consp x2)
-                (ordered x2)
-                (<<= x1 (car x2)))
-           (== (notless x1 x2) x2)))
-
-(property split-ordered (x1 :all x2 :tl)
-  (implies (ordered x2)
-           (== (append (less x1 x2) (notless x1 x2)) x2))
-  :hints (("Subgoal *1/4.4'"
-           :use ((:instance ordered-less-empty
-                            (x1 (car x2))
-                            (x2 (cdr x2)))))
-          ("Subgoal *1/4.3'"
-           :use ((:instance ordered-less-empty
-                            (x1 (car x2))
-                            (x2 (cdr x2)))))
-          ("Subgoal *1/4.2"
-           :use ((:instance ordered-less-empty
-                            (x1 x1)
-                            (x2 (cdr x2)))))
-          ("Subgoal *1/4.1"
-           :use ((:instance ordered-less-empty
-                            (x1 x1)
-                            (x2 (cdr x2)))))))
-
-(property split-isort (x1 :all x2 :tl)
-  (implies (ordered x2)
-    (== (insert x1 x2)
-      (append (less x1 x2) (cons x1 (notless x1 x2)))))
-  :hints (("Goal" :induct (insert x1 x2))
-          ("Subgoal *1/2'"
-           :use ((:instance ordered-less-empty
-                            (x1 x1)
-                            (x2 x2))))))
-
-(property isort-qsort=isort (x :tl)
-  (== (isort x)
-      (isort (qsort x)))
-  :hints (("Goal" :induct (qsort x))))
-
-(in-theory (disable isort-qsort=isort isort-ordered-x=x))
-
-(property isort-qsort=qsort (x :tl)
-  (== (qsort x)
-      (isort (qsort x))))
+    (== (insert a x)
+        (append (less a x) (cons a (notless a x))))))
 
 (property qsort=isort (x :tl)
-  (== (qsort x) (isort x))
-  :hints (("Goal"
-           :use (isort-qsort=isort
-                 isort-qsort=qsort))))
-
+  (== (qsort x)
+      (isort x)))
 
 #|
  Extra Credit 1. (25 points each, all or nothing)
@@ -699,7 +621,32 @@ Q3. Consider the following definitions.
  under <<=, and permutations of each other, they are equal. Second,
  prove that qsort and isort return ordered permutations of their
  input.
+|#
 
+(definec perm (x y :tl) :bool
+  (== (isort x)
+      (isort y)))
+
+(property ordered-isort-equal (x :tl)
+  (implies (ordered x)
+          (== (isort x) x))
+  :hints (("Goal"
+         :in-theory (disable split-isort))))
+
+(property ordered-permp-equal (x y :tl)
+  (implies (and (ordered x) (ordered y) (perm x y))
+          (== x y))
+  :rule-classes nil)
+
+(property ordered-permutation-isort (x :tl)
+  (and (ordered (isort x))
+      (perm x (isort x))))
+
+(property ordered-permutation-qsort (x :tl)
+  (and (ordered (qsort x))
+      (perm x (qsort x))))
+
+#|
  2. Do the homework in another theorem prover of your choice. Try to
  make it as equivalent as possible. Provide a summary of your
  findings.  This is only recommended for those of you that already
